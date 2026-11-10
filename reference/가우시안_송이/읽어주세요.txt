@@ -1,0 +1,27 @@
+가우시안 프로세스 회귀 모델 (담당: 송이)  2026-11-10
+
+[폴더 구성]
+source_code_file/3_gaussian_model.py   모델 코드. 팀 프로젝트 폴더의 source_code_file/ 에 넣고 실행
+source_code_file/README_gaussian.md    실행 방법, 설계, 결과, 개선 내용 정리
+source_code_file/3_gaussian_experiment.ipynb   실험 과정을 단계별로 돌려보는 Jupyter 노트북 (결과 포함)
+보고서/6_가우시안 모델 쉽게 설명.pdf     가우시안 프로세스가 뭔지 쉽게 설명 (먼저 읽기 추천)
+보고서/4_가우시안 모델 학습.pdf          v1: 처음 만든 과정과 결과, 오차 원인 분석
+보고서/5_가우시안 모델 개선.pdf          v2: 공휴일 변수 추가, 추세 변수 제거, 최종 결과
+model_output/gaussian_8020/            최종 결과: 팀 공통 80/20 검증 (건물별 검증 성능, 검증 예측, test 예측, 제출 파일)
+model_output/gaussian/                 v2 마지막 7일 검증 결과 (비교용)
+model_output/gaussian_v1/              v1 결과 (비교용)
+model_output/cmp_none, cmp_smooth, cmp_linear/   추세 처리 방식 3가지 비교 (35동 검증)
+model_output/*.log                     실행 로그
+
+[실행]
+cd source_code_file
+python 3_gaussian_model.py all          # 10개 유형 전부 + 제출 파일 (10코어 기준 약 12분)
+python 3_gaussian_model.py apartment    # 유형 하나만
+필요 패키지: pandas, numpy, scikit-learn
+데이터는 팀 공용 폴더의 source_data/train, source_data/test 를 그대로 읽음 (압축에 포함 안 함)
+
+[검증 방식] 팀 공통 80/20
+2024-08-08 00시 미만은 학습(6/1~8/7, 68일), 이후는 검증(8/8~8/24, 17일). 평가지표 SMAPE.
+최종 100동 전체 검증 SMAPE 9.58. 제출 파일 model_output/gaussian_8020/gaussian_submission.csv (16,800행)
+이전 7일 검증 방식은 SMAPE 8.71 (model_output/gaussian/). --valid-start 2024-08-18 옵션으로 재현 가능.
+자세한 비교표는 README_gaussian.md 맨 위.
