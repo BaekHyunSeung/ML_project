@@ -1,7 +1,8 @@
 # 가우시안 프로세스 회귀 학습
-# 커널·로그 변환·추세 처리는 reference/가우시안_송이/source_code_file/3_gaussian_model.py 를 그대로 가져왔다.
-# 학습만 하고, 데이터 분할·점수 계산·파일 저장·제출 파일 생성은 하지 않는다.
-# 원본처럼 건물 1동 분량을 한 번 호출에 넣는 기준으로 둔다. 유형 전체를 한 번에 넣으면 n³으로 느려진다.
+# 커널·로그 변환·추세 처리는 reference/가우시안_송이/source_code_file/3_gaussian_model.py 를 가져왔다.
+# 학습만 하고, 데이터 분할·점수 계산·파일 저장은 하지 않는다.
+# 건물 유형 하나의 행으로 모델 하나를 만든다. 입력에 건물 크기·설비를 넣어
+# 그 유형의 다른 건물도 예측할 수 있게 한다.
 #
 # 호출 예시
 #   import importlib
@@ -28,20 +29,47 @@ HOLIDAYS = pd.to_datetime(["2024-06-06", "2024-08-15"])  # 현충일, 광복절
 TREND_MIN_DAYS = 30.0  # trend="smooth" 에서 day_index 길이척도 하한(일)
 TRENDS = ("none", "smooth", "linear", "v1")
 
-# 건물 안에서 시간마다 변하는 값만 입력으로 쓴다. 일조·일사는 test에 없어서 제외한다.
+# 일조·일사는 test에 없어서 제외한다.
+BUILDING_COLUMNS = [
+    "total_area",
+    "cooling_area",
+    "solar_capacity",
+    "ess_capacity",
+    "pcs_capacity",
+]
 WEATHER_COLUMNS = ["temperature", "precipitation", "wind_speed", "humidity"]
 TIME_COLUMNS = ["hour_sin", "hour_cos", "weekday_sin", "weekday_cos"]
 RANDOM_STATE = 42
+ROWS_PER_BUILDING = 150
 
 
 def feature_columns(trend):
     """추세 처리 방식에 따라 입력 열 목록을 돌려준다."""
     if trend == "v1":
-        return WEATHER_COLUMNS + TIME_COLUMNS + ["is_weekend", "day_index"]
-    base = WEATHER_COLUMNS + TIME_COLUMNS + ["is_off_day"]
-    if trend == "smooth":
-        return base + ["day_index"]
-    return base  # none, linear
+        time_part = TIME_COLUMNS + ["is_weekend", "day_index"]
+    else:
+        time_part = TIME_COLUMNS + ["is_off_day"]
+        if trend == "smooth":
+            time_part = time_part + ["day_index"]
+    return BUILDING_COLUMNS + WEATHER_COLUMNS + time_part
+
+
+def sample_by_building(data, rows_per_building=ROWS_PER_BUILDING, random_state=RANDOM_STATE):
+    """건물마다 같은 수만큼 행을 뽑는다. 그 유형의 건물이 빠지지 않게 한다."""
+    parts = []
+    for _, part in data.groupby("building_id", sort=True):
+        count = min(len(part), rows_per_building)
+        parts.append(part.sample(count, random_state=random_state))
+    return pd.concat(parts, ignore_index=True)
+
+
+def drop_constant_columns(frame, columns):
+    """학습 데이터에서 값이 하나뿐인 열을 뺀다."""
+    dropped = [column for column in columns if frame[column].nunique(dropna=False) <= 1]
+    kept = [column for column in columns if column not in dropped]
+    if not kept:
+        raise ValueError("학습에 사용할 입력 열이 없습니다.")
+    return kept, dropped
 
 
 def _is_raw_frame(data):
@@ -199,8 +227,9 @@ def train_gaussian(
 ):
     """전달받은 입력, 정답, 파라미터로 가우시안 프로세스 회귀를 학습해 반환한다.
 
-    X가 num_date_time, hour, weekday를 가진 데이터프레임이면 원본과 같이
-    주기 함수·쉬는 날·추세 변수를 만든 뒤, 날씨와 시간 열만 표준화해서 학습한다.
+    X가 num_date_time, hour, weekday를 가진 데이터프레임이면
+    주기 함수·쉬는 날·추세 변수를 만들고, 건물·날씨·시간 열을 표준화해서 학습한다.
+    값이 모두 같은 열은 뺀다.
     이미 숫자로 만든 행렬이면 trend는 "none"만 쓸 수 있고, 그 행렬을 표준화해서 학습한다.
 
     y는 kWh이다. 안에서 log1p를 씌워 학습한다.
@@ -222,6 +251,7 @@ def train_gaussian(
             missing.append("day_index")
         if missing:
             raise KeyError(f"가우시안 입력 열이 없습니다: {missing}")
+        columns, dropped = drop_constant_columns(frame, columns)
         input_mode = "raw"
     else:
         if trend != "none":
@@ -238,6 +268,7 @@ def train_gaussian(
                 matrix = matrix.reshape(-1, 1)
             columns = [f"x{i}" for i in range(matrix.shape[1])]
             frame = pd.DataFrame(matrix, columns=columns)
+        columns, dropped = drop_constant_columns(frame, columns)
         input_mode = "matrix"
 
     if len(frame) != len(y):
@@ -282,6 +313,7 @@ def train_gaussian(
     model.kernel_ = gpr.kernel_
     model.scaler = scaler
     model.columns = list(columns)
+    model.dropped_columns = dropped
     model.trend = trend
     model.trend_coef = trend_coef
     model.input_mode = input_mode

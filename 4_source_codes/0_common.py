@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
-SOURCE_DIR = PROJECT_DIR / "source_data"
+SOURCE_DIR = PROJECT_DIR / "1_source_data"
 RESULTS_DIR = PROJECT_DIR / "results"
 
 TARGET = "power_consumption"
@@ -43,10 +43,10 @@ BUILDING_TYPE_NAMES = {
     "school": "학교",
 }
 
-# 날짜 기준 분할 시점: 이 시각 미만은 학습(6/1~8/7, 68일), 이후는 검증(8/8~8/24, 17일).
-# 행 순서로 80%를 자르면 "기간"이 아니라 "건물"이 잘리므로(호텔은 10동 중 2동이 검증으로 감)
-# 날짜로 잘라야 모든 건물이 학습·검증에 함께 들어간다. 10개 유형 모두 정확히 80:20이 된다.
-SPLIT_DATE = pd.Timestamp("2024-08-08 00:00")
+# 학습과 검증은 날짜가 아니라 건물로 나눈다.
+# 연면적이 작은 순으로 1/3, 2/3 위치의 2동을 검증으로 뺀다.
+# 그 2동은 전체 기간으로 점수를 내고, 나머지 건물은 전체 기간을 학습에 쓴다.
+# 가장 작은 건물과 가장 큰 건물은 학습에 남긴다. 한 번도 보지 못한 크기를 맞히는 검증이 되지 않게 한다.
 
 
 # 건물유형 CSV 읽기 함수 (split: "train" 또는 "test")
@@ -66,11 +66,26 @@ def add_datetime(data):
     return converted
 
 
-# 날짜 기준 학습/검증 분할 함수
-def split_train_valid(data, split_date=SPLIT_DATE):
-    is_train = data["date_time"] < split_date
-    train = data[is_train].reset_index(drop=True)
-    valid = data[~is_train].reset_index(drop=True)
+def holdout_building_ids(data):
+    """연면적 오름차순에서 1/3, 2/3 위치의 건물 2동을 검증용으로 고른다."""
+    area = (
+        data.groupby("building_id", sort=False)["total_area"]
+        .first()
+        .reset_index()
+        .sort_values(["total_area", "building_id"], kind="mergesort")
+    )
+    count = len(area)
+    if count < 3:
+        raise ValueError("검증으로 빼려면 건물이 3동 이상이어야 합니다.")
+    positions = [count // 3, (2 * count) // 3]
+    return [int(area.iloc[position]["building_id"]) for position in positions]
+
+
+def split_held_buildings(data, held_ids):
+    """뺀 건물의 전체 기간은 검증, 나머지 건물의 전체 기간은 학습이다."""
+    is_held = data["building_id"].isin(held_ids)
+    train = data.loc[~is_held].reset_index(drop=True)
+    valid = data.loc[is_held].reset_index(drop=True)
     return train, valid
 
 
@@ -82,16 +97,17 @@ def remove_zero_power(data):
     return data[~is_zero].reset_index(drop=True), int(is_zero.sum())
 
 
-# 학습·검증 세트 준비 함수 (로드 → 날짜 생성 → 분할 → 0값 제외)
+# 학습·검증 세트 준비 함수 (로드 → 날짜 생성 → 건물 2동 제외 → 0값 제외)
 def load_train_valid(building_type, verbose=True):
     data = add_datetime(load_type_data(building_type, "train"))
-    train, valid = split_train_valid(data)
+    held_ids = holdout_building_ids(data)
+    train, valid = split_held_buildings(data, held_ids)
     train, train_zero = remove_zero_power(train)
     valid, valid_zero = remove_zero_power(valid)
     if verbose:
         print(
             f"[{building_type}] 학습 {len(train)}행(0값 {train_zero}행 제외), "
-            f"검증 {len(valid)}행(0값 {valid_zero}행 제외), 건물 {data['building_id'].nunique()}동"
+            f"검증 {len(valid)}행(0값 {valid_zero}행 제외), 검증 건물 {held_ids}"
         )
     return train, valid
 
@@ -129,23 +145,20 @@ def save_results(rows, filename):
 def setup_korean_font():
     import matplotlib.pyplot as plt
 
-    # Windows는 Malgun Gothic, 없는 환경에서는 Noto Sans CJK KR로 대체한다.
-    plt.rcParams["font.family"] = ["Malgun Gothic", "Noto Sans CJK KR", "sans-serif"]
+    # Windows에 있는 맑은 고딕만 지정한다. 없는 글꼴을 목록에 넣으면 글자마다 경고가 난다.
+    plt.rcParams["font.family"] = "Malgun Gothic"
     plt.rcParams["axes.unicode_minus"] = False
 
 
 if __name__ == "__main__":
-    # 공용 모듈 점검: 10개 유형 분할 비율과 0값 제외 행 수를 출력한다.
-    total_zero = 0
+    # 공용 모듈 점검: 유형별 검증 건물과 학습·검증이 전체 기간인지 출력한다.
     for building_type in BUILDING_TYPES:
         data = add_datetime(load_type_data(building_type, "train"))
-        train, valid = split_train_valid(data)
-        ratio = len(train) / len(data)
-        zero = int((data[TARGET] == 0).sum())
-        total_zero += zero
+        held_ids = holdout_building_ids(data)
+        train, valid = split_held_buildings(data, held_ids)
         print(
-            f"{building_type:17s} 전체 {len(data):6d}  학습 {len(train):6d}  검증 {len(valid):5d}  "
-            f"학습비율 {ratio:.4f}  학습일수 {train['date_time'].dt.date.nunique()}  "
-            f"검증일수 {valid['date_time'].dt.date.nunique()}  0값 {zero}"
+            f"{building_type:17s} 검증 {held_ids}  "
+            f"학습 {train['building_id'].nunique()}동 {len(train)}행  "
+            f"검증 {valid['building_id'].nunique()}동 {len(valid)}행  "
+            f"학습기간 {train['date_time'].min()} ~ {train['date_time'].max()}"
         )
-    print(f"전력소비량 0인 행 합계: {total_zero}")
