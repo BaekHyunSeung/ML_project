@@ -7,5 +7,5 @@ hotel	호텔	gaussian_process	trend=smooth, restarts=0
 idc	IDC(전화국)	gaussian_process	trend=smooth, restarts=0
 other	건물기타	bayesian_linear_regression	alpha=1e-06, beta=0.01
 public	공공	gaussian_process	trend=none, restarts=0
-research	연구소	bayesian_linear_regression	alpha=0.01, beta=0.0001
+research	연구소	neural_network	alpha=0.001, hidden_layers=64-32
 school	학교	gaussian_process	trend=linear, restarts=0

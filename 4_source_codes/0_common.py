@@ -117,6 +117,81 @@ def load_test(building_type):
     return add_datetime(load_type_data(building_type, "test"))
 
 
+# 팀 입력 명세. 기온, 월, 시간대 4구간, 주말, 면적·설비 용량.
+# 일조·일사는 test.csv에 없어서 넣지 않는다.
+BASE_CONTINUOUS_COLUMNS = [
+    "temperature",
+    "month",
+    "total_area",
+    "cooling_area",
+    "solar_capacity",
+    "ess_capacity",
+    "pcs_capacity",
+]
+TIME_BINS = [0, 6, 12, 18, 24]
+TIME_LABELS = ["dawn", "morning", "afternoon", "evening"]
+TIME_DUMMY_COLUMNS = ["time_morning", "time_afternoon", "time_evening"]
+BASE_BINARY_COLUMNS = ["is_weekend"] + TIME_DUMMY_COLUMNS
+
+
+def add_time_dummies(data):
+    """시간대를 새벽·오전·오후·저녁으로 나누고, 새벽은 기준이라 열을 만들지 않는다."""
+    converted = data.copy()
+    time_band = pd.cut(converted["hour"], bins=TIME_BINS, labels=TIME_LABELS, right=False)
+    for label in TIME_LABELS[1:]:
+        converted[f"time_{label}"] = (time_band == label).astype(np.float64)
+    return converted
+
+
+def add_weekend(data):
+    """토요일과 일요일을 주말로 표시한다."""
+    converted = data.copy()
+    converted["is_weekend"] = converted["weekday"].isin([5, 6]).astype(np.float64)
+    return converted
+
+
+def make_base_features(data):
+    """팀 입력 명세대로 기온, 월, 시간대, 주말, 면적·설비를 만든다."""
+    converted = add_weekend(add_time_dummies(data))
+    return converted[BASE_CONTINUOUS_COLUMNS + BASE_BINARY_COLUMNS].astype(np.float64)
+
+
+def drop_constant_columns(train_x, valid_x):
+    """학습 데이터에서 값이 하나뿐인 열을 학습·검증 모두에서 뺀다."""
+    constant = [column for column in train_x.columns if train_x[column].nunique() <= 1]
+    return train_x.drop(columns=constant), valid_x.drop(columns=constant), constant
+
+
+def standardize(train_x, valid_x, columns=None):
+    """연속형 열을 학습 데이터의 평균·표준편차로 표준화한다."""
+    if columns is None:
+        columns = BASE_CONTINUOUS_COLUMNS
+    columns = [column for column in columns if column in train_x.columns]
+    mean = train_x[columns].mean()
+    std = train_x[columns].std(ddof=0)
+    train_scaled, valid_scaled = train_x.copy(), valid_x.copy()
+    train_scaled[columns] = (train_x[columns] - mean) / std
+    valid_scaled[columns] = (valid_x[columns] - mean) / std
+    return train_scaled, valid_scaled
+
+
+def fix_humidity_zero(data):
+    """습도 0%를 센서 오류로 보고, 같은 건물의 앞뒤 값으로 채운다."""
+    converted = data.copy()
+    humidity = converted["humidity"].replace(0, np.nan)
+    converted["humidity"] = humidity.groupby(converted["building_id"]).transform(
+        lambda values: values.interpolate(limit_direction="both")
+    )
+    return converted
+
+
+def pick_representative_building(predictions, actual_column="actual"):
+    """평균 사용량이 유형 중앙값에 가장 가까운 건물 번호를 고른다."""
+    building_mean = predictions.groupby("building_id")[actual_column].mean()
+    median = building_mean.median()
+    return int((building_mean - median).abs().idxmin())
+
+
 # 팀 공통 평가지표 함수: MAE, RMSE, R²
 def regression_metrics(y_true, y_pred):
     y_true = np.asarray(y_true, dtype=np.float64)

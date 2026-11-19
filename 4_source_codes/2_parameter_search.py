@@ -24,11 +24,17 @@ GAUSSIAN_CANDIDATES = [
     {"trend": trend, "restarts": 0}
     for trend in ("none", "smooth", "linear")
 ]
+NEURAL_CANDIDATES = [
+    {"hidden_layers": layers, "alpha": alpha}
+    for layers in ("32", "64-32", "128-64")
+    for alpha in (1e-3, 1e-2)
+]
 METRIC_COLUMNS = ("MAE", "RMSE", "R2")
 MODEL_NAMES = {
     "decision_tree": "결정트리",
     "bayesian_linear_regression": "베이지안",
     "gaussian_process": "가우시안",
+    "neural_network": "인공신경망",
 }
 IMAGE_COLUMNS = ("모델 이름", "입력 파라미터", "MAE", "RMSE", "R²")
 
@@ -125,6 +131,7 @@ def find_parameters(
     tree_candidates=None,
     bayesian_candidates=None,
     gaussian_candidates=None,
+    neural_candidates=None,
     rows_per_building=None,
     building_type=None,
 ):
@@ -132,6 +139,7 @@ def find_parameters(
     tree_candidates = TREE_CANDIDATES if tree_candidates is None else tree_candidates
     bayesian_candidates = BAYESIAN_CANDIDATES if bayesian_candidates is None else bayesian_candidates
     gaussian_candidates = GAUSSIAN_CANDIDATES if gaussian_candidates is None else gaussian_candidates
+    neural_candidates = NEURAL_CANDIDATES if neural_candidates is None else neural_candidates
     gaussian_kwargs = {}
     if rows_per_building is not None:
         gaussian_kwargs["rows_per_building"] = rows_per_building
@@ -141,12 +149,14 @@ def find_parameters(
     gaussian_best, gaussian_table = model_train.search_gaussian(
         train, valid, gaussian_candidates, **gaussian_kwargs
     )
+    neural_best, neural_table = model_train.search_neural(train, valid, neural_candidates)
 
     table = pd.concat(
         [
             tree_table.assign(model=model_train.tree.MODEL_NAME),
             bayesian_table.assign(model=model_train.BAYESIAN_NAME),
             gaussian_table.assign(model=model_train.GAUSSIAN_NAME),
+            neural_table.assign(model=model_train.NEURAL_NAME),
         ],
         ignore_index=True,
     )
@@ -157,6 +167,7 @@ def find_parameters(
         model_train.tree.MODEL_NAME: tree_best,
         model_train.BAYESIAN_NAME: bayesian_best,
         model_train.GAUSSIAN_NAME: gaussian_best,
+        model_train.NEURAL_NAME: neural_best,
     }
     return best, table
 

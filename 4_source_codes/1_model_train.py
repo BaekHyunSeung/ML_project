@@ -17,12 +17,14 @@ MODELS_DIR = PROJECT_DIR / "3_models_train_codes"
 SAVED_MODELS_DIR = PROJECT_DIR / "5_models"
 BAYESIAN_NAME = "bayesian_linear_regression"
 GAUSSIAN_NAME = "gaussian_process"
+NEURAL_NAME = "neural_network"
 if str(MODELS_DIR) not in sys.path:
     sys.path.insert(0, str(MODELS_DIR))
 
 tree = importlib.import_module("1_decision_tree_regression")
 bayesian = importlib.import_module("0_bayesian_regression")
 gaussian = importlib.import_module("2_gaussian")
+neural = importlib.import_module("3_artificial_neural_network")
 
 TREE_COLUMNS = [
     "total_area",
@@ -110,6 +112,19 @@ def search_gaussian(train, valid, candidates, rows_per_building=gaussian.ROWS_PE
     return summarize(rows)
 
 
+def search_neural(train, valid, candidates):
+    """인공신경망 후보 파라미터를 검증 점수로 비교한다. 파일은 만들지 않는다."""
+    if not candidates:
+        raise ValueError("candidates가 비어 있습니다.")
+    y_train = train[common.TARGET]
+    y_valid = valid[common.TARGET]
+    rows = []
+    for params in candidates:
+        model = neural.train_neural_network(train, y_train, **params)
+        _append_score(rows, params, y_valid, model.predict(valid))
+    return summarize(rows)
+
+
 def model_file(model_name, building_type, building_id=None):
     """저장 파일 경로를 만든다.
 
@@ -148,3 +163,9 @@ def save_gaussian(train, params, building_type, rows_per_building=gaussian.ROWS_
     sampled = gaussian.sample_by_building(train, rows_per_building)
     model = gaussian.train_gaussian(sampled, sampled[common.TARGET], **params)
     return _save(model, model_file(GAUSSIAN_NAME, building_type))
+
+
+def save_neural(train, params, building_type):
+    """가장 좋은 인공신경망 파라미터로 학습 데이터만 다시 학습해 저장한다."""
+    model = neural.train_neural_network(train, train[common.TARGET], **params)
+    return _save(model, model_file(NEURAL_NAME, building_type))

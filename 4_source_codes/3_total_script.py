@@ -23,7 +23,7 @@ def split_one_type(building_type):
 
 
 def save_selected_models(building_type, train, best, rows_per_building=None):
-    """탐색에서 고른 파라미터로 세 모델을 학습해 저장한다."""
+    """탐색에서 고른 파라미터로 네 모델을 학습해 저장한다."""
     tree_path = model_train.save_tree(
         train, best[model_train.tree.MODEL_NAME], building_type
     )
@@ -36,10 +36,14 @@ def save_selected_models(building_type, train, best, rows_per_building=None):
     gaussian_path = model_train.save_gaussian(
         train, best[model_train.GAUSSIAN_NAME], building_type, **gaussian_kwargs
     )
+    neural_path = model_train.save_neural(
+        train, best[model_train.NEURAL_NAME], building_type
+    )
     return {
         model_train.tree.MODEL_NAME: tree_path,
         model_train.BAYESIAN_NAME: bayesian_path,
         model_train.GAUSSIAN_NAME: gaussian_path,
+        model_train.NEURAL_NAME: neural_path,
     }
 
 

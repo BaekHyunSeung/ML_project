@@ -2,7 +2,7 @@
 
 머신러닝 수업 프로젝트. 건물 100동의 시간별 전력소비량(kWh)을 예측한다.
 
-건물 유형마다 결정트리, 베이지안 선형 회귀, 가우시안 프로세스의 파라미터를 찾고, 검증 점수가 가장 좋은 하나를 그 유형의 사용 모델로 고른다. 인공신경망 학습 코드와 최종 예측 실행 파일은 아직 비어 있다.
+건물 유형마다 결정트리, 베이지안 선형 회귀, 가우시안 프로세스, 인공신경망의 파라미터를 찾고, 검증 점수가 가장 좋은 하나를 그 유형의 사용 모델로 고른다. 최종 예측 실행 파일은 `4_final_system.py`다. 실행하면 `model_select.txt`의 모델을 불러 두고, 사용자가 고른 건물 유형과 그 모델에 필요한 값으로 한 시각의 전력소비량을 예측한다.
 
 ## 팀
 
@@ -76,7 +76,7 @@ ML_test
 │   ├── 1_model_train.py        모델별 점수 계산과 모델 저장
 │   ├── 2_parameter_search.py   후보 비교, 점수 이미지, 사용 모델 선정
 │   ├── 3_total_script.py       10개 유형 분할, 탐색, 저장, 선정
-│   └── 4_final_system.py       유형별 사용 모델로 예측. 아직 비어 있음
+│   └── 4_final_system.py       선정 모델로 사용자가 넣은 시각의 전력소비량 예측
 ├── 5_models                    학습이 끝난 모델과 선정 결과
 │   └── model_select.txt
 ├── results                     파라미터 표와 모델 선정 표 이미지
@@ -86,7 +86,7 @@ ML_test
 └── README.md
 ```
 
-학습 함수는 넘겨받은 `X`, `y`, 파라미터로 한 번만 학습한다. `3_total_script.py`가 유형을 나누고 `2_parameter_search.py`로 파라미터를 찾은 뒤 `1_model_train.py`에 저장을 맡긴다. 이어서 세 모델 중 MAE가 가장 작은 모델을 고르고 `5_models/model_select.txt`에 적는다.
+학습 함수는 넘겨받은 `X`, `y`, 파라미터로 한 번만 학습한다. `3_total_script.py`가 유형을 나누고 `2_parameter_search.py`로 파라미터를 찾은 뒤 `1_model_train.py`에 저장을 맡긴다. 이어서 네 모델 중 MAE가 가장 작은 모델을 고르고 `5_models/model_select.txt`에 적는다.
 
 `reference/Bayesian`은 박준희의 베이지안 원본과 회의 메모 `DECISIONS.md`다. `reference/가우시안_송이`는 우송이의 가우시안 원본, 실험 기록, 검증 결과다. `reference/tree_test.py`는 저장된 결정트리로 한 시각을 예측하는 예시이다. 지금 파이프라인이 실행하는 코드는 `3_models_train_codes`와 `4_source_codes`다.
 
@@ -96,16 +96,16 @@ ML_test
 
 한 건물 유형에 대해 아래 순서로 정하고, 같은 과정을 10개 유형에 반복한다.
 
-1. 결정트리, 베이지안, 가우시안 각각에 대해 정해 둔 후보를 학습하고, 뺀 건물 2동의 MAE가 가장 작은 파라미터를 그 모델의 설정으로 둔다.
-2. 그 파라미터로 남은 건물의 85일 전체를 다시 학습해 모델 파일 세 개를 저장한다. 가우시안은 이때도 건물당 150행만 뽑는다.
-3. 세 모델의 검증 MAE를 비교해 그 유형의 사용 모델을 고른다. 후보 전체 표와 선정 표는 이미지로 저장한다.
+1. 결정트리, 베이지안, 가우시안, 인공신경망 각각에 대해 정해 둔 후보를 학습하고, 뺀 건물 2동의 MAE가 가장 작은 파라미터를 그 모델의 설정으로 둔다.
+2. 그 파라미터로 남은 건물의 85일 전체를 다시 학습해 모델 파일 네 개를 저장한다. 가우시안은 이때도 건물당 150행만 뽑는다.
+3. 네 모델의 검증 MAE를 비교해 그 유형의 사용 모델을 고른다. 후보 전체 표와 선정 표는 이미지로 저장한다.
 
 | 모델 | 파일 | 후보 |
 | --- | --- | --- |
 | 결정트리 | `1_decision_tree_regression.py` | `max_depth` 5, 10, 15 × `min_samples_leaf` 1, 5. `random_state`는 42 |
 | 베이지안 선형 회귀 | `0_bayesian_regression.py` | `alpha` 0.01, 0.0001, 0.000001 × `beta` 0.01, 0.0001 |
 | 가우시안 프로세스 | `2_gaussian.py` | `trend` none, smooth, linear. `restarts`는 0. 건물당 150행 |
-| 인공신경망 | `3_artificial_neural_network.py` | 작성 전. 선정 반복에 들어가지 않음 |
+| 인공신경망 | `3_artificial_neural_network.py` | `hidden_layers` 32, 64-32, 128-64 × `alpha` 0.001, 0.01. 최대 500에폭, 조기 종료 |
 
 가우시안 프로세스는 건물 유형 하나당 모델 하나다. 학습은 `log1p`로 하고, 예측은 `expm1`로 kWh에 되돌린다.
 
@@ -129,9 +129,10 @@ model = tree.train_tree(X, y)
 | 결정트리 | `5_models/decision_tree/public.joblib` |
 | 베이지안 | `5_models/bayesian_linear_regression/public.joblib` |
 | 가우시안 | `5_models/gaussian_process/public.joblib` |
+| 인공신경망 | `5_models/neural_network/public.joblib` |
 | 유형별 사용 모델 | `5_models/model_select.txt` |
 
-세 모델 파일을 모두 저장한 뒤 하나를 고른다. 고르지 않은 파일도 지우지 않는다. `model_select.txt`의 열은 건물유형, 한글이름, 모델, 파라미터다.
+네 모델 파일을 모두 저장한 뒤 하나를 고른다. 고르지 않은 파일도 지우지 않는다. `model_select.txt`의 열은 건물유형, 한글이름, 모델, 파라미터다. 아래 선정 결과는 인공신경망을 넣기 전 실행이다.
 
 현재 선정 결과는 다음과 같다.
 
